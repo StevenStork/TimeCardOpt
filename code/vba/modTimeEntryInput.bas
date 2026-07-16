@@ -39,18 +39,18 @@ End Sub
 '------------------------------------------------------------------------------
 ' Write entryValue (project title or charge code) into every minute cell for
 ' entryDate in [startTime, endTime).
-' Raises a clear error if any target cell already has a value.
+' If allowOverwrite is False and cells are occupied, raises an error the form
+' can catch; pass True after the user confirms overwrite.
 '------------------------------------------------------------------------------
 Public Sub EnterTimeRange( _
     ByVal entryDate As Date, _
     ByVal entryValue As String, _
     ByVal startTime As Date, _
-    ByVal endTime As Date)
+    ByVal endTime As Date, _
+    Optional ByVal allowOverwrite As Boolean = False)
 
     Dim ws As Worksheet
     Dim col As Long
-    Dim startMinute As Long
-    Dim endMinute As Long
     Dim startRow As Long
     Dim endRow As Long
     Dim valueText As String
@@ -62,18 +62,78 @@ Public Sub EnterTimeRange( _
             "Select a project or a charge code."
     End If
 
+    ResolveTimeRangeBounds entryDate, startTime, endTime, ws, startRow, endRow, col
+
+    If Not allowOverwrite Then
+        overlapAddress = FindOccupiedCells(ws, startRow, endRow, col)
+        If Len(overlapAddress) > 0 Then
+            Err.Raise vbObjectError + 4004, "EnterTimeRange", _
+                "Existing entries found in " & overlapAddress & "."
+        End If
+    End If
+
+    WriteEntryValue ws, startRow, endRow, col, valueText
+End Sub
+
+'------------------------------------------------------------------------------
+' Clear every minute cell for entryDate in [startTime, endTime).
+'------------------------------------------------------------------------------
+Public Sub ClearTimeRange( _
+    ByVal entryDate As Date, _
+    ByVal startTime As Date, _
+    ByVal endTime As Date)
+
+    Dim ws As Worksheet
+    Dim col As Long
+    Dim startRow As Long
+    Dim endRow As Long
+
+    ResolveTimeRangeBounds entryDate, startTime, endTime, ws, startRow, endRow, col
+    ClearEntryRange ws, startRow, endRow, col
+End Sub
+
+'------------------------------------------------------------------------------
+' Returns the address of occupied cells in the range, or vbNullString if empty.
+'------------------------------------------------------------------------------
+Public Function DescribeTimeRangeOverlap( _
+    ByVal entryDate As Date, _
+    ByVal startTime As Date, _
+    ByVal endTime As Date) As String
+
+    Dim ws As Worksheet
+    Dim col As Long
+    Dim startRow As Long
+    Dim endRow As Long
+
+    ResolveTimeRangeBounds entryDate, startTime, endTime, ws, startRow, endRow, col
+    DescribeTimeRangeOverlap = FindOccupiedCells(ws, startRow, endRow, col)
+End Function
+
+'------------------------------------------------------------------------------
+Private Sub ResolveTimeRangeBounds( _
+    ByVal entryDate As Date, _
+    ByVal startTime As Date, _
+    ByVal endTime As Date, _
+    ByRef ws As Worksheet, _
+    ByRef startRow As Long, _
+    ByRef endRow As Long, _
+    ByRef col As Long)
+
+    Dim startMinute As Long
+    Dim endMinute As Long
+
     startMinute = MinuteOfDay(startTime)
     endMinute = MinuteOfDay(endTime)
 
     If endMinute <= startMinute Then
-        Err.Raise vbObjectError + 4002, "EnterTimeRange", _
+        Err.Raise vbObjectError + 4002, "ResolveTimeRangeBounds", _
             "End time must be after start time on the same day."
     End If
 
     Set ws = TimeEntrySheet()
     col = FindDateColumn(ws, entryDate)
     If col = 0 Then
-        Err.Raise vbObjectError + 4003, "EnterTimeRange", _
+        Err.Raise vbObjectError + 4003, "ResolveTimeRangeBounds", _
             "Date " & Format$(entryDate, "mm/dd/yyyy") & _
             " was not found on the Time Entry sheet. Run PrepareTimeEntry first."
     End If
@@ -81,14 +141,6 @@ Public Sub EnterTimeRange( _
     ' Rows cover minutes startMinute .. endMinute-1 inclusive.
     startRow = MINUTE_START_ROW + startMinute
     endRow = MINUTE_START_ROW + endMinute - 1
-
-    overlapAddress = FindOccupiedCells(ws, startRow, endRow, col)
-    If Len(overlapAddress) > 0 Then
-        Err.Raise vbObjectError + 4004, "EnterTimeRange", _
-            "Cannot overwrite existing entries in " & overlapAddress & "."
-    End If
-
-    WriteEntryValue ws, startRow, endRow, col, valueText
 End Sub
 
 '------------------------------------------------------------------------------
@@ -283,6 +335,27 @@ Private Sub WriteEntryValue( _
     On Error GoTo CleanFail
 
     ws.Cells(startRow, col).Resize(rowCount, 1).Value = out
+
+CleanExit:
+    OptimizeExcel False
+    Exit Sub
+
+CleanFail:
+    OptimizeExcel False
+    Err.Raise Err.Number, Err.Source, Err.Description
+End Sub
+
+'------------------------------------------------------------------------------
+Private Sub ClearEntryRange( _
+    ByVal ws As Worksheet, _
+    ByVal startRow As Long, _
+    ByVal endRow As Long, _
+    ByVal col As Long)
+
+    OptimizeExcel True
+    On Error GoTo CleanFail
+
+    ws.Range(ws.Cells(startRow, col), ws.Cells(endRow, col)).ClearContents
 
 CleanExit:
     OptimizeExcel False

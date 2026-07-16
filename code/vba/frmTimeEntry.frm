@@ -1,7 +1,7 @@
 VERSION 5.00
 Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} frmTimeEntry
    Caption         =   "Enter Hours"
-   ClientHeight    =   5400
+   ClientHeight    =   6000
    ClientLeft      =   120
    ClientTop       =   465
    ClientWidth     =   7800
@@ -17,8 +17,8 @@ Option Explicit
 '==============================================================================
 ' Enter hours against a date, a project OR a direct charge code, and a
 ' start/end time. Writes that project title or charge code into matching
-' Time Entry cells and blocks the save if any of those cells already have
-' a value.
+' Time Entry cells. If the range already has values, asks before overwriting.
+' Also supports clearing the selected date/time block.
 '
 ' Setup:
 '   Insert an empty UserForm named frmTimeEntry and paste from Option Explicit
@@ -52,7 +52,7 @@ End Sub
 Private Sub EnsureUi()
     Me.Caption = "Enter Hours"
     Me.Width = 420
-    Me.Height = 360
+    Me.Height = 400
 
     If ControlExists(CTRL_DATE) Then
         HookExistingControls
@@ -75,7 +75,8 @@ Private Sub EnsureUi()
     AddCombo CTRL_END, 214, 220, 170, 24
 
     HookButton AddButton("cmdEnter", "Enter Hours", 24, 268, 170, 32), "OnEnterHours"
-    HookButton AddButton("cmdClose", "Close", 214, 268, 170, 32), "OnCloseForm"
+    HookButton AddButton("cmdClear", "Clear Block", 214, 268, 170, 32), "OnClearBlock"
+    HookButton AddButton("cmdClose", "Close", 24, 312, 360, 28), "OnCloseForm"
 End Sub
 
 Private Sub HookExistingControls()
@@ -83,6 +84,7 @@ Private Sub HookExistingControls()
     HookCombo Me.Controls(CTRL_PROJECT), "OnProjectChanged"
     HookCombo Me.Controls(CTRL_CHARGE), "OnChargeChanged"
     HookButton Me.Controls("cmdEnter"), "OnEnterHours"
+    HookButton Me.Controls("cmdClear"), "OnClearBlock"
     HookButton Me.Controls("cmdClose"), "OnCloseForm"
     On Error GoTo 0
 End Sub
@@ -161,6 +163,9 @@ Private Sub cboChargeCode_Change()
 End Sub
 Private Sub cmdEnter_Click()
     OnEnterHours
+End Sub
+Private Sub cmdClear_Click()
+    OnClearBlock
 End Sub
 Private Sub cmdClose_Click()
     OnCloseForm
@@ -312,6 +317,8 @@ Public Sub OnEnterHours()
     Dim minutes As Long
     Dim projectTitle As String
     Dim chargeCode As String
+    Dim overlapAddress As String
+    Dim allowOverwrite As Boolean
 
     On Error GoTo Fail
 
@@ -330,7 +337,19 @@ Public Sub OnEnterHours()
             "Select a project or a charge code."
     End If
 
-    EnterTimeRange entryDate, entryValue, startTime, endTime
+    overlapAddress = DescribeTimeRangeOverlap(entryDate, startTime, endTime)
+    allowOverwrite = False
+    If Len(overlapAddress) > 0 Then
+        If MsgBox( _
+            "This time block already has entries in " & overlapAddress & "." & vbCrLf & vbCrLf & _
+            "Do you want to overwrite them with '" & entryValue & "'?", _
+            vbYesNo + vbExclamation, "Overwrite Entries?") <> vbYes Then
+            Exit Sub
+        End If
+        allowOverwrite = True
+    End If
+
+    EnterTimeRange entryDate, entryValue, startTime, endTime, allowOverwrite
 
     minutes = MinuteOfDay(endTime) - MinuteOfDay(startTime)
     MsgBox "Entered " & entryValue & " for " & Format$(entryDate, "mm/dd/yyyy") & _
@@ -340,6 +359,42 @@ Public Sub OnEnterHours()
 
 Fail:
     MsgBox Err.Description, vbExclamation, "Enter Hours"
+End Sub
+
+Public Sub OnClearBlock()
+    Dim entryDate As Date
+    Dim startTime As Date
+    Dim endTime As Date
+    Dim minutes As Long
+    Dim overlapAddress As String
+
+    On Error GoTo Fail
+
+    entryDate = ParseDateInput(CStr(Me.Controls(CTRL_DATE).Value))
+    startTime = ParseTimeInput(CStr(Me.Controls(CTRL_START).Value))
+    endTime = ParseTimeInput(CStr(Me.Controls(CTRL_END).Value))
+
+    overlapAddress = DescribeTimeRangeOverlap(entryDate, startTime, endTime)
+    If Len(overlapAddress) = 0 Then
+        MsgBox "There are no entries to clear in that time block.", _
+            vbInformation, "Clear Block"
+        Exit Sub
+    End If
+
+    minutes = MinuteOfDay(endTime) - MinuteOfDay(startTime)
+    If MsgBox( _
+        "Clear entries in " & overlapAddress & " on " & Format$(entryDate, "mm/dd/yyyy") & _
+        " (" & Format$(minutes / 60#, "0.##") & " hours)?", _
+        vbYesNo + vbQuestion, "Clear Block") <> vbYes Then
+        Exit Sub
+    End If
+
+    ClearTimeRange entryDate, startTime, endTime
+    MsgBox "Cleared the selected time block.", vbInformation, "Clear Block"
+    Exit Sub
+
+Fail:
+    MsgBox Err.Description, vbExclamation, "Clear Block"
 End Sub
 
 Public Sub OnCloseForm()
