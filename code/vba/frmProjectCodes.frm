@@ -1,10 +1,10 @@
 VERSION 5.00
 Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} frmProjectCodes
    Caption         =   "Project Codes"
-   ClientHeight    =   6840
+   ClientHeight    =   8400
    ClientLeft      =   120
    ClientTop       =   465
-   ClientWidth     =   10200
+   ClientWidth     =   10800
    StartUpPosition =   1  'CenterOwner
 End
 Attribute VB_Name = "frmProjectCodes"
@@ -54,31 +54,31 @@ End Sub
 '------------------------------------------------------------------------------
 Private Sub EnsureUi()
     Me.Caption = "Project Codes"
-    Me.Width = 520
-    Me.Height = 400
+    Me.Width = 720
+    Me.Height = 560
 
     If ControlExists(CTRL_DIRECT_LIST) Then
         HookExistingControls
         Exit Sub
     End If
 
-    AddLabel "lblDirectHeader", "Direct Charge Codes", 12, 12, 200, 18
-    AddTextBox CTRL_DIRECT_TEXT, 12, 36, 150, 22
-    HookButton AddButton("cmdAddDirect", "Add", 168, 36, 50, 22), "OnAddDirect"
-    HookButton AddButton("cmdRemoveDirect", "Remove", 222, 36, 60, 22), "OnRemoveDirect"
-    AddListBox CTRL_DIRECT_LIST, 12, 66, 270, 250, False
+    AddLabel "lblDirectHeader", "Direct Charge Codes", 18, 16, 240, 18
+    AddTextBox CTRL_DIRECT_TEXT, 18, 42, 220, 24
+    HookButton AddButton("cmdAddDirect", "Add", 248, 42, 60, 24), "OnAddDirect"
+    HookButton AddButton("cmdRemoveDirect", "Remove", 316, 42, 70, 24), "OnRemoveDirect"
+    AddListBox CTRL_DIRECT_LIST, 18, 78, 370, 400, False
 
-    AddLabel "lblProjectHeader", "Projects", 300, 12, 200, 18
-    AddTextBox CTRL_PROJECT_TITLE, 300, 36, 150, 22
-    HookButton AddButton("cmdAddProject", "Add", 456, 36, 50, 22), "OnAddProject"
-    HookList AddListBox(CTRL_PROJECT_LIST, 300, 66, 206, 90, False), "OnProjectSelected"
+    AddLabel "lblProjectHeader", "Projects", 410, 16, 240, 18
+    AddTextBox CTRL_PROJECT_TITLE, 410, 42, 220, 24
+    HookButton AddButton("cmdAddProject", "Add", 640, 42, 60, 24), "OnAddProject"
+    HookList AddListBox(CTRL_PROJECT_LIST, 410, 78, 290, 140, False), "OnProjectSelected"
 
-    AddLabel "lblAssocHeader", "Associated Direct Codes", 300, 168, 200, 18
-    AddListBox CTRL_ASSOC_LIST, 300, 192, 206, 114, True
+    AddLabel "lblAssocHeader", "Associated Direct Codes", 410, 232, 240, 18
+    AddListBox CTRL_ASSOC_LIST, 410, 258, 290, 180, True
 
-    HookButton AddButton("cmdSaveProject", "Save Project", 300, 318, 100, 24), "OnSaveProject"
-    HookButton AddButton("cmdDeleteProject", "Delete Project", 406, 318, 100, 24), "OnDeleteProject"
-    HookButton AddButton("cmdClose", "Close", 300, 348, 206, 24), "OnCloseForm"
+    HookButton AddButton("cmdSaveProject", "Save Project", 410, 452, 120, 28), "OnSaveProject"
+    HookButton AddButton("cmdDeleteProject", "Delete Project", 560, 452, 140, 28), "OnDeleteProject"
+    HookButton AddButton("cmdClose", "Close", 410, 492, 290, 28), "OnCloseForm"
 End Sub
 
 Private Sub HookExistingControls()
