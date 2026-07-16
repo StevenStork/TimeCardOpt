@@ -7,18 +7,22 @@ Option Explicit
 ' Builds the Time Entry sheet from the date chosen on the Welcome page.
 '
 '   PrepareTimeEntry
-'     1. Copies Welcome!F1 into Time Entry!B1
+'     1. Copies Welcome!F3 into Time Entry!B1
 '     2. Fills Time Entry!A2 downward with every minute of the day (00:00-23:59)
+'     3. Fills Time Entry row 1 from C1 across with the next 366 dates after B1
 '
 ' Both sheets are expected to already exist in the workbook template.
 '==============================================================================
 
 Private Const WELCOME_SHEET As String = "Welcome"
 Private Const TIME_ENTRY_SHEET As String = "Time Entry"
-Private Const WELCOME_DATE_CELL As String = "F1"
+Private Const WELCOME_DATE_CELL As String = "F3"
 Private Const TIME_ENTRY_DATE_CELL As String = "B1"
 Private Const MINUTE_START_ROW As Long = 2
 Private Const MINUTES_PER_DAY As Long = 1440   ' 24 * 60
+Private Const DATE_HEADER_ROW As Long = 1
+Private Const DATE_HEADER_START_COL As Long = 3   ' column C
+Private Const DAYS_AFTER_START As Long = 366
 
 '------------------------------------------------------------------------------
 ' Public entry point — run this from a button or the Macros dialog.
@@ -39,6 +43,7 @@ Public Sub PrepareTimeEntry()
     timeEntryWs.Range(TIME_ENTRY_DATE_CELL).NumberFormat = "mm/dd/yyyy"
 
     FillMinuteColumn timeEntryWs
+    FillDateHeaders timeEntryWs, entryDate
 
 CleanExit:
     OptimizeExcel False
@@ -50,7 +55,7 @@ CleanFail:
 End Sub
 
 '------------------------------------------------------------------------------
-' Read and validate the date from Welcome!F1.
+' Read and validate the date from Welcome!F3.
 '------------------------------------------------------------------------------
 Private Function ReadWelcomeDate(ByVal welcomeWs As Worksheet) As Date
     Dim rawValue As Variant
@@ -91,4 +96,35 @@ Private Sub FillMinuteColumn(ByVal timeEntryWs As Worksheet)
 
     targetRange.Value = minutes
     targetRange.NumberFormat = "h:mm"
+End Sub
+
+'------------------------------------------------------------------------------
+' Write the next 366 dates after entryDate across row 1 starting at C1.
+' C1 = entryDate + 1, D1 = entryDate + 2, ..., through entryDate + 366.
+'------------------------------------------------------------------------------
+Private Sub FillDateHeaders(ByVal timeEntryWs As Worksheet, ByVal entryDate As Date)
+    Dim dates() As Variant
+    Dim i As Long
+    Dim targetRange As Range
+    Dim lastCol As Long
+
+    ReDim dates(1 To 1, 1 To DAYS_AFTER_START)
+
+    For i = 1 To DAYS_AFTER_START
+        dates(1, i) = entryDate + i
+    Next i
+
+    lastCol = DATE_HEADER_START_COL + DAYS_AFTER_START - 1
+
+    Set targetRange = timeEntryWs.Range( _
+        timeEntryWs.Cells(DATE_HEADER_ROW, DATE_HEADER_START_COL), _
+        timeEntryWs.Cells(DATE_HEADER_ROW, lastCol))
+
+    ' Clear any leftover headers to the right, then write the date span.
+    timeEntryWs.Range( _
+        timeEntryWs.Cells(DATE_HEADER_ROW, DATE_HEADER_START_COL), _
+        timeEntryWs.Cells(DATE_HEADER_ROW, timeEntryWs.Columns.Count)).ClearContents
+
+    targetRange.Value = dates
+    targetRange.NumberFormat = "mm/dd/yyyy"
 End Sub
