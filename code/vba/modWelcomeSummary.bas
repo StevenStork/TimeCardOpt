@@ -11,6 +11,12 @@ Option Explicit
 '       UpdateWelcomeSummary
 '   End Sub
 '
+' Each refresh:
+'   1. Saves rows 1-3 (values + formatting)
+'   2. Clears the Welcome sheet
+'   3. Restores rows 1-3
+'   4. Rebuilds the formatted project summary table
+'
 ' Layout:
 '   B5          = "Projects"
 '   C5:P5       = the 14 dates in the pay period that contains Welcome!J3
@@ -23,15 +29,22 @@ Option Explicit
 Private Const WELCOME_SHEET As String = "Welcome"
 Private Const PERIOD_DATE_CELL As String = "J3"
 Private Const ANCHOR_DATE_CELL As String = "F3"
-Private Const SUMMARY_TITLE_CELL As String = "B5"
 Private Const SUMMARY_TITLE As String = "Projects"
 Private Const SUMMARY_START_ROW As Long = 5
 Private Const SUMMARY_DATA_START_ROW As Long = 6
-Private Const SUMMARY_FIRST_DATE_COL As Long = 3   ' C
-Private Const SUMMARY_LAST_DATE_COL As Long = 16   ' P
+Private Const SUMMARY_LABEL_COL As Long = 2          ' B
+Private Const SUMMARY_FIRST_DATE_COL As Long = 3     ' C
+Private Const SUMMARY_LAST_DATE_COL As Long = 16     ' P
 Private Const PAY_PERIOD_DAYS As Long = 14
 Private Const MINUTE_START_ROW As Long = 2
 Private Const MINUTES_PER_DAY As Long = 1440
+Private Const PRESERVE_ROWS As Long = 3
+Private Const TEMP_SHEET_NAME As String = "__WelcomeRowsTemp"
+
+Private Const HEADER_FILL_RGB As Long = 4737096      ' RGB(72, 100, 120)
+Private Const HEADER_FONT_RGB As Long = 16777215     ' white
+Private Const ALT_ROW_FILL_RGB As Long = 15132390    ' RGB(230, 236, 240)
+Private Const BORDER_RGB As Long = 11316396          ' RGB(140, 156, 172)
 
 '------------------------------------------------------------------------------
 Public Sub UpdateWelcomeSummary()
@@ -48,6 +61,7 @@ Public Sub UpdateWelcomeSummary()
     Dim totalMinutes As Long
     Dim outRow As Long
     Dim hoursValue As Double
+    Dim lastDataRow As Long
 
     On Error GoTo CleanFail
     OptimizeExcel True
@@ -55,6 +69,7 @@ Public Sub UpdateWelcomeSummary()
     Set welcomeWs = WelcomeSheet()
     Set timeEntryWs = TimeEntrySheet()
 
+    ' Capture period inputs before the sheet is cleared.
     GetPayPeriodForDate ReadWelcomeDate(welcomeWs, PERIOD_DATE_CELL), _
         ReadWelcomeDate(welcomeWs, ANCHOR_DATE_CELL), _
         periodStart, periodEnd
@@ -63,43 +78,44 @@ Public Sub UpdateWelcomeSummary()
     projectTitles = LoadProjectTitles()
     projectCount = VariantLen(projectTitles)
 
-    ClearSummaryArea welcomeWs
+    ResetWelcomeSheetPreservingTopRows welcomeWs
 
-    welcomeWs.Range(SUMMARY_TITLE_CELL).Value = SUMMARY_TITLE
+    welcomeWs.Cells(SUMMARY_START_ROW, SUMMARY_LABEL_COL).Value = SUMMARY_TITLE
     For dayIndex = 1 To PAY_PERIOD_DAYS
         welcomeWs.Cells(SUMMARY_START_ROW, SUMMARY_FIRST_DATE_COL + dayIndex - 1).Value = _
             periodDates(dayIndex)
-        welcomeWs.Cells(SUMMARY_START_ROW, SUMMARY_FIRST_DATE_COL + dayIndex - 1).NumberFormat = _
-            "mm/dd/yyyy"
     Next dayIndex
 
-    If projectCount = 0 Then GoTo CleanExit
+    lastDataRow = SUMMARY_START_ROW
 
-    ReDim minuteCounts(1 To projectCount, 1 To PAY_PERIOD_DAYS)
-    AccumulateProjectMinutes timeEntryWs, periodDates, projectTitles, minuteCounts
+    If projectCount > 0 Then
+        ReDim minuteCounts(1 To projectCount, 1 To PAY_PERIOD_DAYS)
+        AccumulateProjectMinutes timeEntryWs, periodDates, projectTitles, minuteCounts
 
-    outRow = SUMMARY_DATA_START_ROW
-    For projectIndex = 1 To projectCount
-        totalMinutes = 0
-        For dayIndex = 1 To PAY_PERIOD_DAYS
-            totalMinutes = totalMinutes + minuteCounts(projectIndex, dayIndex)
-        Next dayIndex
-
-        If totalMinutes > 0 Then
-            welcomeWs.Cells(outRow, 2).Value = CStr(VariantItem(projectTitles, projectIndex))
-
+        outRow = SUMMARY_DATA_START_ROW
+        For projectIndex = 1 To projectCount
+            totalMinutes = 0
             For dayIndex = 1 To PAY_PERIOD_DAYS
-                If minuteCounts(projectIndex, dayIndex) > 0 Then
+                totalMinutes = totalMinutes + minuteCounts(projectIndex, dayIndex)
+            Next dayIndex
+
+            If totalMinutes > 0 Then
+                welcomeWs.Cells(outRow, SUMMARY_LABEL_COL).Value = _
+                    CStr(VariantItem(projectTitles, projectIndex))
+
+                For dayIndex = 1 To PAY_PERIOD_DAYS
                     hoursValue = Application.WorksheetFunction.Round( _
                         minuteCounts(projectIndex, dayIndex) / 60#, 2)
                     welcomeWs.Cells(outRow, SUMMARY_FIRST_DATE_COL + dayIndex - 1).Value = hoursValue
-                    welcomeWs.Cells(outRow, SUMMARY_FIRST_DATE_COL + dayIndex - 1).NumberFormat = "0.00"
-                End If
-            Next dayIndex
+                Next dayIndex
 
-            outRow = outRow + 1
-        End If
-    Next projectIndex
+                lastDataRow = outRow
+                outRow = outRow + 1
+            End If
+        Next projectIndex
+    End If
+
+    FormatSummaryTable welcomeWs, lastDataRow
 
 CleanExit:
     OptimizeExcel False
@@ -108,6 +124,126 @@ CleanExit:
 CleanFail:
     OptimizeExcel False
     MsgBox "UpdateWelcomeSummary failed: " & Err.Description, vbExclamation, "Welcome Summary"
+End Sub
+
+'------------------------------------------------------------------------------
+' Save rows 1-3 (all columns, values + formatting), clear the sheet, restore.
+'------------------------------------------------------------------------------
+Private Sub ResetWelcomeSheetPreservingTopRows(ByVal welcomeWs As Worksheet)
+    Dim tempWs As Worksheet
+
+    RemoveTempSheetIfPresent
+
+    Set tempWs = ThisWorkbook.Worksheets.Add(After:=welcomeWs)
+    tempWs.Name = TEMP_SHEET_NAME
+    tempWs.Visible = xlSheetVeryHidden
+
+    welcomeWs.Range("1:" & CStr(PRESERVE_ROWS)).Copy Destination:=tempWs.Range("A1")
+
+    welcomeWs.Cells.Clear
+
+    tempWs.Range("1:" & CStr(PRESERVE_ROWS)).Copy Destination:=welcomeWs.Range("A1")
+
+    RemoveTempSheetIfPresent
+End Sub
+
+'------------------------------------------------------------------------------
+Private Sub RemoveTempSheetIfPresent()
+    Dim tempWs As Worksheet
+
+    On Error Resume Next
+    Set tempWs = ThisWorkbook.Worksheets(TEMP_SHEET_NAME)
+    On Error GoTo 0
+
+    If Not tempWs Is Nothing Then
+        tempWs.Visible = xlSheetVisible
+        tempWs.Delete
+    End If
+End Sub
+
+'------------------------------------------------------------------------------
+Private Sub FormatSummaryTable(ByVal welcomeWs As Worksheet, ByVal lastDataRow As Long)
+    Dim headerRange As Range
+    Dim tableRange As Range
+    Dim dataRange As Range
+    Dim hoursRange As Range
+    Dim labelRange As Range
+    Dim r As Long
+    Dim dayIndex As Long
+
+    Set headerRange = welcomeWs.Range( _
+        welcomeWs.Cells(SUMMARY_START_ROW, SUMMARY_LABEL_COL), _
+        welcomeWs.Cells(SUMMARY_START_ROW, SUMMARY_LAST_DATE_COL))
+
+    With headerRange
+        .Font.Name = "Calibri"
+        .Font.Size = 11
+        .Font.Bold = True
+        .Font.Color = HEADER_FONT_RGB
+        .Interior.Color = HEADER_FILL_RGB
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .WrapText = True
+    End With
+
+    welcomeWs.Cells(SUMMARY_START_ROW, SUMMARY_LABEL_COL).HorizontalAlignment = xlLeft
+
+    For dayIndex = 1 To PAY_PERIOD_DAYS
+        welcomeWs.Cells(SUMMARY_START_ROW, SUMMARY_FIRST_DATE_COL + dayIndex - 1).NumberFormat = _
+            "mmm d"
+    Next dayIndex
+
+    welcomeWs.Rows(SUMMARY_START_ROW).RowHeight = 30
+
+    If lastDataRow >= SUMMARY_DATA_START_ROW Then
+        Set dataRange = welcomeWs.Range( _
+            welcomeWs.Cells(SUMMARY_DATA_START_ROW, SUMMARY_LABEL_COL), _
+            welcomeWs.Cells(lastDataRow, SUMMARY_LAST_DATE_COL))
+        Set hoursRange = welcomeWs.Range( _
+            welcomeWs.Cells(SUMMARY_DATA_START_ROW, SUMMARY_FIRST_DATE_COL), _
+            welcomeWs.Cells(lastDataRow, SUMMARY_LAST_DATE_COL))
+        Set labelRange = welcomeWs.Range( _
+            welcomeWs.Cells(SUMMARY_DATA_START_ROW, SUMMARY_LABEL_COL), _
+            welcomeWs.Cells(lastDataRow, SUMMARY_LABEL_COL))
+
+        With dataRange
+            .Font.Name = "Calibri"
+            .Font.Size = 10
+            .VerticalAlignment = xlCenter
+        End With
+
+        labelRange.HorizontalAlignment = xlLeft
+        labelRange.IndentLevel = 1
+
+        With hoursRange
+            .HorizontalAlignment = xlCenter
+            .NumberFormat = "0.00"
+        End With
+
+        For r = SUMMARY_DATA_START_ROW To lastDataRow
+            If ((r - SUMMARY_DATA_START_ROW) Mod 2) = 1 Then
+                welcomeWs.Range( _
+                    welcomeWs.Cells(r, SUMMARY_LABEL_COL), _
+                    welcomeWs.Cells(r, SUMMARY_LAST_DATE_COL)).Interior.Color = ALT_ROW_FILL_RGB
+            End If
+            welcomeWs.Rows(r).RowHeight = 20
+        Next r
+    End If
+
+    Set tableRange = welcomeWs.Range( _
+        welcomeWs.Cells(SUMMARY_START_ROW, SUMMARY_LABEL_COL), _
+        welcomeWs.Cells(lastDataRow, SUMMARY_LAST_DATE_COL))
+
+    With tableRange.Borders
+        .LineStyle = xlContinuous
+        .Weight = xlThin
+        .Color = BORDER_RGB
+    End With
+
+    welcomeWs.Columns(SUMMARY_LABEL_COL).ColumnWidth = 22
+    For dayIndex = 1 To PAY_PERIOD_DAYS
+        welcomeWs.Columns(SUMMARY_FIRST_DATE_COL + dayIndex - 1).ColumnWidth = 8
+    Next dayIndex
 End Sub
 
 '------------------------------------------------------------------------------
@@ -164,21 +300,6 @@ Private Sub BuildPeriodDates(ByVal periodStart As Date, ByRef periodDates() As D
     For i = 1 To PAY_PERIOD_DAYS
         periodDates(i) = periodStart + (i - 1)
     Next i
-End Sub
-
-'------------------------------------------------------------------------------
-Private Sub ClearSummaryArea(ByVal welcomeWs As Worksheet)
-    Dim lastRow As Long
-
-    lastRow = welcomeWs.Cells(welcomeWs.Rows.Count, 2).End(xlUp).Row
-    If lastRow < SUMMARY_START_ROW Then lastRow = SUMMARY_START_ROW
-
-    ' Keep a generous clear window so shorter new summaries replace longer old ones.
-    If lastRow < SUMMARY_START_ROW + 200 Then lastRow = SUMMARY_START_ROW + 200
-
-    welcomeWs.Range( _
-        welcomeWs.Cells(SUMMARY_START_ROW, 2), _
-        welcomeWs.Cells(lastRow, SUMMARY_LAST_DATE_COL)).ClearContents
 End Sub
 
 '------------------------------------------------------------------------------
