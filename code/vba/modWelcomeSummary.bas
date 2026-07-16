@@ -17,6 +17,9 @@ Option Explicit
 '   3. Restores rows 1-3
 '   4. Rebuilds the Projects table (hours to nearest hundredth)
 '   5. Rebuilds the Codes table two rows below (hours to nearest tenth)
+'   6. Writes Codes total hours to N3
+'   7. Sizes/stacks REButton, ETButton, and ECButton in column R
+'   8. Activates the Welcome sheet
 '
 ' Projects table:
 '   B5          = "Projects"
@@ -49,6 +52,12 @@ Private Const MINUTES_PER_DAY As Long = 1440
 Private Const PRESERVE_ROWS As Long = 3
 Private Const TEMP_SHEET_NAME As String = "__WelcomeRowsTemp"
 Private Const TABLE_GAP_ROWS As Long = 2
+Private Const CODES_TOTAL_CELL As String = "N3"
+Private Const BUTTON_COLUMN As String = "R"
+Private Const BUTTON_WIDTH As Double = 110
+Private Const BUTTON_HEIGHT As Double = 32
+Private Const BUTTON_GAP As Double = 14
+Private Const BUTTON_START_ROW As Long = 5
 
 Private Const HEADER_FILL_RGB As Long = 4737096      ' RGB(72, 100, 120)
 Private Const HEADER_FONT_RGB As Long = 16777215     ' white
@@ -69,6 +78,7 @@ Public Sub UpdateWelcomeSummary()
     Dim directMinutes() As Long
     Dim lastProjectRow As Long
     Dim codesHeaderRow As Long
+    Dim codesTotalHours As Double
 
     On Error GoTo CleanFail
     OptimizeExcel True
@@ -102,15 +112,28 @@ Public Sub UpdateWelcomeSummary()
     FormatSummaryTable welcomeWs, SUMMARY_START_ROW, lastProjectRow, 2
 
     codesHeaderRow = lastProjectRow + TABLE_GAP_ROWS
-    WriteCodesTable welcomeWs, codesHeaderRow, periodDates, projectTitles, _
-        directCodes, projectMinutes, directMinutes
+    codesTotalHours = WriteCodesTable(welcomeWs, codesHeaderRow, periodDates, projectTitles, _
+        directCodes, projectMinutes, directMinutes)
+
+    With welcomeWs.Range(CODES_TOTAL_CELL)
+        .Value = codesTotalHours
+        .NumberFormat = "0.0"
+    End With
+
+    LayoutWelcomeButtons welcomeWs
 
 CleanExit:
     OptimizeExcel False
+    On Error Resume Next
+    welcomeWs.Activate
+    On Error GoTo 0
     Exit Sub
 
 CleanFail:
     OptimizeExcel False
+    On Error Resume Next
+    If Not welcomeWs Is Nothing Then welcomeWs.Activate
+    On Error GoTo 0
     MsgBox "UpdateWelcomeSummary failed: " & Err.Description, vbExclamation, "Welcome Summary"
 End Sub
 
@@ -162,14 +185,16 @@ Private Function WriteProjectsTable( _
 End Function
 
 '------------------------------------------------------------------------------
-Private Sub WriteCodesTable( _
+' Returns the sum of hours written into the Codes table (nearest tenth).
+'------------------------------------------------------------------------------
+Private Function WriteCodesTable( _
     ByVal welcomeWs As Worksheet, _
     ByVal headerRow As Long, _
     ByRef periodDates() As Date, _
     ByRef projectTitles As Variant, _
     ByRef directCodes As Variant, _
     ByRef projectMinutes() As Long, _
-    ByRef directMinutes() As Long)
+    ByRef directMinutes() As Long) As Double
 
     Dim dayIndex As Long
     Dim codeList() As String
@@ -180,6 +205,7 @@ Private Sub WriteCodesTable( _
     Dim outRow As Long
     Dim lastDataRow As Long
     Dim hoursValue As Double
+    Dim tableTotalHours As Double
 
     BuildCodesListAndMinutes projectTitles, directCodes, projectMinutes, directMinutes, _
         codeList, codeCount, codeMinutes
@@ -192,6 +218,7 @@ Private Sub WriteCodesTable( _
 
     lastDataRow = headerRow
     outRow = headerRow + 1
+    tableTotalHours = 0
 
     For codeIndex = 1 To codeCount
         totalMinutes = 0
@@ -206,6 +233,7 @@ Private Sub WriteCodesTable( _
                 hoursValue = Application.WorksheetFunction.Round( _
                     codeMinutes(codeIndex, dayIndex) / 60#, 1)
                 welcomeWs.Cells(outRow, SUMMARY_FIRST_DATE_COL + dayIndex - 1).Value = hoursValue
+                tableTotalHours = tableTotalHours + hoursValue
             Next dayIndex
 
             lastDataRow = outRow
@@ -214,6 +242,81 @@ Private Sub WriteCodesTable( _
     Next codeIndex
 
     FormatSummaryTable welcomeWs, headerRow, lastDataRow, 1
+    WriteCodesTable = Application.WorksheetFunction.Round(tableTotalHours, 1)
+End Function
+
+'------------------------------------------------------------------------------
+' Make REButton, ETButton, and ECButton the same size and stack them in col R.
+'------------------------------------------------------------------------------
+Private Sub LayoutWelcomeButtons(ByVal welcomeWs As Worksheet)
+    Dim buttonNames As Variant
+    Dim i As Long
+    Dim leftPos As Double
+    Dim topPos As Double
+    Dim btnTop As Double
+
+    buttonNames = Array("REButton", "ETButton", "ECButton")
+    leftPos = welcomeWs.Columns(BUTTON_COLUMN).Left
+    topPos = welcomeWs.Rows(BUTTON_START_ROW).Top
+
+    For i = LBound(buttonNames) To UBound(buttonNames)
+        btnTop = topPos + ((i - LBound(buttonNames)) * (BUTTON_HEIGHT + BUTTON_GAP))
+        PositionWelcomeButton welcomeWs, CStr(buttonNames(i)), leftPos, btnTop, _
+            BUTTON_WIDTH, BUTTON_HEIGHT
+    Next i
+End Sub
+
+'------------------------------------------------------------------------------
+Private Sub PositionWelcomeButton( _
+    ByVal welcomeWs As Worksheet, _
+    ByVal buttonName As String, _
+    ByVal leftPos As Double, _
+    ByVal topPos As Double, _
+    ByVal widthPos As Double, _
+    ByVal heightPos As Double)
+
+    Dim shp As Shape
+    Dim oleObj As OLEObject
+    Dim formBtn As Button
+
+    On Error Resume Next
+    Set shp = welcomeWs.Shapes(buttonName)
+    On Error GoTo 0
+    If Not shp Is Nothing Then
+        With shp
+            .LockAspectRatio = msoFalse
+            .Left = leftPos
+            .Top = topPos
+            .Width = widthPos
+            .Height = heightPos
+        End With
+        Exit Sub
+    End If
+
+    On Error Resume Next
+    Set oleObj = welcomeWs.OLEObjects(buttonName)
+    On Error GoTo 0
+    If Not oleObj Is Nothing Then
+        With oleObj
+            .Left = leftPos
+            .Top = topPos
+            .Width = widthPos
+            .Height = heightPos
+        End With
+        Exit Sub
+    End If
+
+    On Error Resume Next
+    Set formBtn = welcomeWs.Buttons(buttonName)
+    On Error GoTo 0
+    If Not formBtn Is Nothing Then
+        With formBtn
+            .Left = leftPos
+            .Top = topPos
+            .Width = widthPos
+            .Height = heightPos
+        End With
+    End If
 End Sub
 
 '------------------------------------------------------------------------------
