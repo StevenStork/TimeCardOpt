@@ -15,9 +15,10 @@ Attribute VB_Exposed = False
 Option Explicit
 
 '==============================================================================
-' Enter hours against a date, charge code (or project + charge code), and
-' start/end time. Writes the charge code into matching Time Entry cells and
-' blocks the save if any of those cells already contain a value.
+' Enter hours against a date, a project OR a direct charge code, and a
+' start/end time. Writes that project title or charge code into matching
+' Time Entry cells and blocks the save if any of those cells already have
+' a value.
 '
 ' Setup:
 '   Insert an empty UserForm named frmTimeEntry and paste from Option Explicit
@@ -30,7 +31,8 @@ Private Const CTRL_CHARGE As String = "cboChargeCode"
 Private Const CTRL_START As String = "cboStartTime"
 Private Const CTRL_END As String = "cboEndTime"
 
-Private Const PROJECT_NONE As String = "(Direct charge code)"
+Private Const PROJECT_NONE As String = "(None)"
+Private Const CHARGE_NONE As String = "(None)"
 
 Private mLoading As Boolean
 Private mHooks As Collection
@@ -60,11 +62,11 @@ Private Sub EnsureUi()
     AddLabel "lblDate", "Date", 24, 18, 360, 18
     AddCombo CTRL_DATE, 24, 40, 360, 24
 
-    AddLabel "lblProject", "Project (optional)", 24, 78, 360, 18
+    AddLabel "lblProject", "Project", 24, 78, 360, 18
     HookCombo AddCombo(CTRL_PROJECT, 24, 100, 360, 24), "OnProjectChanged"
 
     AddLabel "lblCharge", "Charge Code", 24, 138, 360, 18
-    AddCombo CTRL_CHARGE, 24, 160, 360, 24
+    HookCombo AddCombo(CTRL_CHARGE, 24, 160, 360, 24), "OnChargeChanged"
 
     AddLabel "lblStart", "Start Time", 24, 198, 170, 18
     AddCombo CTRL_START, 24, 220, 170, 24
@@ -79,6 +81,7 @@ End Sub
 Private Sub HookExistingControls()
     On Error Resume Next
     HookCombo Me.Controls(CTRL_PROJECT), "OnProjectChanged"
+    HookCombo Me.Controls(CTRL_CHARGE), "OnChargeChanged"
     HookButton Me.Controls("cmdEnter"), "OnEnterHours"
     HookButton Me.Controls("cmdClose"), "OnCloseForm"
     On Error GoTo 0
@@ -153,6 +156,9 @@ End Sub
 Private Sub cboProject_Change()
     OnProjectChanged
 End Sub
+Private Sub cboChargeCode_Change()
+    OnChargeChanged
+End Sub
 Private Sub cmdEnter_Click()
     OnEnterHours
 End Sub
@@ -218,27 +224,19 @@ End Sub
 
 Private Sub LoadChargeCodes()
     Dim cbo As MSForms.ComboBox
-    Dim projectCbo As MSForms.ComboBox
     Dim codes As Variant
     Dim i As Long
-    Dim projectTitle As String
 
     Set cbo = Me.Controls(CTRL_CHARGE)
-    Set projectCbo = Me.Controls(CTRL_PROJECT)
     cbo.Clear
+    cbo.AddItem CHARGE_NONE
 
-    projectTitle = Trim$(CStr(projectCbo.Value))
-    If Len(projectTitle) = 0 Or StrComp(projectTitle, PROJECT_NONE, vbTextCompare) = 0 Then
-        codes = LoadDirectCodes()
-    Else
-        codes = LoadProjectDirectCodes(projectTitle)
-    End If
-
+    codes = LoadDirectCodes()
     For i = 1 To VariantLen(codes)
         cbo.AddItem CStr(VariantItem(codes, i))
     Next i
 
-    If cbo.ListCount > 0 Then cbo.ListIndex = 0
+    cbo.ListIndex = 0
 End Sub
 
 Private Sub LoadTimes()
@@ -263,34 +261,79 @@ Private Sub LoadTimes()
     endCbo.Value = Format$(TimeSerial(17, 0, 0), "h:mm AM/PM")
 End Sub
 
+Private Function SelectedProjectTitle() As String
+    Dim valueText As String
+
+    valueText = Trim$(CStr(Me.Controls(CTRL_PROJECT).Value))
+    If Len(valueText) = 0 Or StrComp(valueText, PROJECT_NONE, vbTextCompare) = 0 Then
+        SelectedProjectTitle = vbNullString
+    Else
+        SelectedProjectTitle = valueText
+    End If
+End Function
+
+Private Function SelectedChargeCode() As String
+    Dim valueText As String
+
+    valueText = Trim$(CStr(Me.Controls(CTRL_CHARGE).Value))
+    If Len(valueText) = 0 Or StrComp(valueText, CHARGE_NONE, vbTextCompare) = 0 Then
+        SelectedChargeCode = vbNullString
+    Else
+        SelectedChargeCode = valueText
+    End If
+End Function
+
+'------------------------------------------------------------------------------
+' Project and charge code are mutually exclusive: picking one clears the other.
 '------------------------------------------------------------------------------
 Public Sub OnProjectChanged()
     If mLoading Then Exit Sub
-    LoadChargeCodes
+    If Len(SelectedProjectTitle()) = 0 Then Exit Sub
+
+    mLoading = True
+    Me.Controls(CTRL_CHARGE).ListIndex = 0
+    mLoading = False
+End Sub
+
+Public Sub OnChargeChanged()
+    If mLoading Then Exit Sub
+    If Len(SelectedChargeCode()) = 0 Then Exit Sub
+
+    mLoading = True
+    Me.Controls(CTRL_PROJECT).ListIndex = 0
+    mLoading = False
 End Sub
 
 Public Sub OnEnterHours()
     Dim entryDate As Date
-    Dim chargeCode As String
+    Dim entryValue As String
     Dim startTime As Date
     Dim endTime As Date
     Dim minutes As Long
+    Dim projectTitle As String
+    Dim chargeCode As String
 
     On Error GoTo Fail
 
     entryDate = ParseDateInput(CStr(Me.Controls(CTRL_DATE).Value))
-    chargeCode = Trim$(CStr(Me.Controls(CTRL_CHARGE).Value))
+    projectTitle = SelectedProjectTitle()
+    chargeCode = SelectedChargeCode()
     startTime = ParseTimeInput(CStr(Me.Controls(CTRL_START).Value))
     endTime = ParseTimeInput(CStr(Me.Controls(CTRL_END).Value))
 
-    If Len(chargeCode) = 0 Then
-        Err.Raise vbObjectError + 4010, "OnEnterHours", "Select a charge code."
+    If Len(projectTitle) > 0 Then
+        entryValue = projectTitle
+    ElseIf Len(chargeCode) > 0 Then
+        entryValue = chargeCode
+    Else
+        Err.Raise vbObjectError + 4010, "OnEnterHours", _
+            "Select a project or a charge code."
     End If
 
-    EnterTimeRange entryDate, chargeCode, startTime, endTime
+    EnterTimeRange entryDate, entryValue, startTime, endTime
 
     minutes = MinuteOfDay(endTime) - MinuteOfDay(startTime)
-    MsgBox "Entered " & chargeCode & " for " & Format$(entryDate, "mm/dd/yyyy") & _
+    MsgBox "Entered " & entryValue & " for " & Format$(entryDate, "mm/dd/yyyy") & _
         " (" & Format$(minutes / 60#, "0.##") & " hours).", _
         vbInformation, "Enter Hours"
     Exit Sub

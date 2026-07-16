@@ -4,10 +4,11 @@ Option Explicit
 '==============================================================================
 ' Time Entry Input
 '
-' Writes a charge code into the Time Entry minute grid for a date/time range.
+' Writes a project title or direct charge code into the Time Entry minute
+' grid for a date/time range.
 '
 '   ShowTimeEntryForm   launch the hours-entry UserForm
-'   EnterTimeRange      validate and write the selected charge code
+'   EnterTimeRange      validate and write the selected entry value
 '
 ' Grid layout (from PrepareTimeEntry):
 '   Time Entry!B1       = first date (column B)
@@ -36,12 +37,13 @@ Public Sub ShowTimeEntryForm()
 End Sub
 
 '------------------------------------------------------------------------------
-' Write chargeCode into every minute cell for entryDate in [startTime, endTime).
+' Write entryValue (project title or charge code) into every minute cell for
+' entryDate in [startTime, endTime).
 ' Raises a clear error if any target cell already has a value.
 '------------------------------------------------------------------------------
 Public Sub EnterTimeRange( _
     ByVal entryDate As Date, _
-    ByVal chargeCode As String, _
+    ByVal entryValue As String, _
     ByVal startTime As Date, _
     ByVal endTime As Date)
 
@@ -51,12 +53,13 @@ Public Sub EnterTimeRange( _
     Dim endMinute As Long
     Dim startRow As Long
     Dim endRow As Long
-    Dim code As String
+    Dim valueText As String
     Dim overlapAddress As String
 
-    code = Trim$(chargeCode)
-    If Len(code) = 0 Then
-        Err.Raise vbObjectError + 4001, "EnterTimeRange", "Select a charge code."
+    valueText = Trim$(entryValue)
+    If Len(valueText) = 0 Then
+        Err.Raise vbObjectError + 4001, "EnterTimeRange", _
+            "Select a project or a charge code."
     End If
 
     startMinute = MinuteOfDay(startTime)
@@ -85,7 +88,7 @@ Public Sub EnterTimeRange( _
             "Cannot overwrite existing entries in " & overlapAddress & "."
     End If
 
-    WriteChargeCode ws, startRow, endRow, col, code
+    WriteEntryValue ws, startRow, endRow, col, valueText
 End Sub
 
 '------------------------------------------------------------------------------
@@ -258,12 +261,12 @@ Private Function FindOccupiedCells( _
 End Function
 
 '------------------------------------------------------------------------------
-Private Sub WriteChargeCode( _
+Private Sub WriteEntryValue( _
     ByVal ws As Worksheet, _
     ByVal startRow As Long, _
     ByVal endRow As Long, _
     ByVal col As Long, _
-    ByVal chargeCode As String)
+    ByVal entryValue As String)
 
     Dim rowCount As Long
     Dim out() As Variant
@@ -273,7 +276,7 @@ Private Sub WriteChargeCode( _
     ReDim out(1 To rowCount, 1 To 1)
 
     For i = 1 To rowCount
-        out(i, 1) = chargeCode
+        out(i, 1) = entryValue
     Next i
 
     OptimizeExcel True
