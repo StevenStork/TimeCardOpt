@@ -59,6 +59,7 @@ Private Sub EnsureUi()
 
     If ControlExists(CTRL_DIRECT_LIST) Then
         HookExistingControls
+        SetReorderButtonCaptions
         Exit Sub
     End If
 
@@ -67,15 +68,15 @@ Private Sub EnsureUi()
     HookButton AddButton("cmdAddDirect", "Add", 248, 42, 60, 24), "OnAddDirect"
     HookButton AddButton("cmdRemoveDirect", "Remove", 316, 42, 70, 24), "OnRemoveDirect"
     AddListBox CTRL_DIRECT_LIST, 18, 78, 320, 400, False
-    HookButton AddButton("cmdDirectUp", "▲", 348, 120, 36, 28), "OnMoveDirectUp"
-    HookButton AddButton("cmdDirectDown", "▼", 348, 156, 36, 28), "OnMoveDirectDown"
+    HookButton AddButton("cmdDirectUp", "^", 348, 120, 36, 28), "OnMoveDirectUp"
+    HookButton AddButton("cmdDirectDown", "v", 348, 156, 36, 28), "OnMoveDirectDown"
 
     AddLabel "lblProjectHeader", "Projects", 410, 16, 240, 18
     AddTextBox CTRL_PROJECT_TITLE, 410, 42, 220, 24
     HookButton AddButton("cmdAddProject", "Add", 640, 42, 60, 24), "OnAddProject"
     HookList AddListBox(CTRL_PROJECT_LIST, 410, 78, 250, 140, False), "OnProjectSelected"
-    HookButton AddButton("cmdProjectUp", "▲", 670, 100, 36, 28), "OnMoveProjectUp"
-    HookButton AddButton("cmdProjectDown", "▼", 670, 134, 36, 28), "OnMoveProjectDown"
+    HookButton AddButton("cmdProjectUp", "^", 670, 100, 36, 28), "OnMoveProjectUp"
+    HookButton AddButton("cmdProjectDown", "v", 670, 134, 36, 28), "OnMoveProjectDown"
 
     AddLabel "lblAssocHeader", "Associated Direct Codes", 410, 232, 240, 18
     AddListBox CTRL_ASSOC_LIST, 410, 258, 290, 180, True
