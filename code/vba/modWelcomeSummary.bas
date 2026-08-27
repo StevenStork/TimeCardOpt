@@ -247,8 +247,13 @@ End Function
 
 '------------------------------------------------------------------------------
 ' Make Welcome action buttons the same size and stack them in col R.
-' ResetButton should call ResetTemplate (assigned automatically when found).
+' Matches buttons by shape name (REButton, etc.) or, for Reset, by caption
+' "Reset Template" when the shape was not renamed ResetButton.
 '------------------------------------------------------------------------------
+Public Sub LayoutWelcomePageButtons()
+    LayoutWelcomeButtons WelcomeSheet()
+End Sub
+
 Private Sub LayoutWelcomeButtons(ByVal welcomeWs As Worksheet)
     Dim buttonNames As Variant
     Dim i As Long
@@ -270,7 +275,7 @@ End Sub
 '------------------------------------------------------------------------------
 Private Sub PositionWelcomeButton( _
     ByVal welcomeWs As Worksheet, _
-    ByVal buttonName As String, _
+    ByVal buttonKey As String, _
     ByVal leftPos As Double, _
     ByVal topPos As Double, _
     ByVal widthPos As Double, _
@@ -278,26 +283,22 @@ Private Sub PositionWelcomeButton( _
 
     Dim shp As Shape
     Dim oleObj As OLEObject
-    Dim formBtn As Button
 
-    On Error Resume Next
-    Set shp = welcomeWs.Shapes(buttonName)
-    On Error GoTo 0
+    Set shp = FindWelcomeShape(welcomeWs, buttonKey)
     If Not shp Is Nothing Then
         With shp
             .LockAspectRatio = msoFalse
+            .Placement = xlFreeFloating
             .Left = leftPos
             .Top = topPos
             .Width = widthPos
             .Height = heightPos
         End With
-        AssignWelcomeButtonMacro buttonName, shp
+        AssignWelcomeButtonMacro buttonKey, shp
         Exit Sub
     End If
 
-    On Error Resume Next
-    Set oleObj = welcomeWs.OLEObjects(buttonName)
-    On Error GoTo 0
+    Set oleObj = FindWelcomeOleObject(welcomeWs, buttonKey)
     If Not oleObj Is Nothing Then
         With oleObj
             .Left = leftPos
@@ -305,26 +306,98 @@ Private Sub PositionWelcomeButton( _
             .Width = widthPos
             .Height = heightPos
         End With
-        Exit Sub
-    End If
-
-    On Error Resume Next
-    Set formBtn = welcomeWs.Buttons(buttonName)
-    On Error GoTo 0
-    If Not formBtn Is Nothing Then
-        With formBtn
-            .Left = leftPos
-            .Top = topPos
-            .Width = widthPos
-            .Height = heightPos
-        End With
-        AssignWelcomeButtonMacro buttonName, formBtn
     End If
 End Sub
 
 '------------------------------------------------------------------------------
-Private Sub AssignWelcomeButtonMacro(ByVal buttonName As String, ByVal btn As Object)
-    If StrComp(buttonName, "ResetButton", vbTextCompare) <> 0 Then Exit Sub
+Private Function FindWelcomeShape(ByVal welcomeWs As Worksheet, ByVal buttonKey As String) As Shape
+    Dim shp As Shape
+
+    On Error Resume Next
+    Set FindWelcomeShape = welcomeWs.Shapes(buttonKey)
+    On Error GoTo 0
+    If Not FindWelcomeShape Is Nothing Then Exit Function
+
+    For Each shp In welcomeWs.Shapes
+        If ShapeMatchesButtonKey(shp, buttonKey) Then
+            Set FindWelcomeShape = shp
+            Exit Function
+        End If
+    Next shp
+End Function
+
+'------------------------------------------------------------------------------
+Private Function FindWelcomeOleObject(ByVal welcomeWs As Worksheet, ByVal buttonKey As String) As OLEObject
+    Dim oleObj As OLEObject
+
+    On Error Resume Next
+    Set FindWelcomeOleObject = welcomeWs.OLEObjects(buttonKey)
+    On Error GoTo 0
+    If Not FindWelcomeOleObject Is Nothing Then Exit Function
+
+    For Each oleObj In welcomeWs.OLEObjects
+        If OleMatchesButtonKey(oleObj, buttonKey) Then
+            Set FindWelcomeOleObject = oleObj
+            Exit Function
+        End If
+    Next oleObj
+End Function
+
+'------------------------------------------------------------------------------
+Private Function ShapeMatchesButtonKey(ByVal shp As Shape, ByVal buttonKey As String) As Boolean
+    If StrComp(shp.Name, buttonKey, vbTextCompare) = 0 Then
+        ShapeMatchesButtonKey = True
+        Exit Function
+    End If
+
+    If shp.Type <> msoFormControl Then Exit Function
+    If shp.FormControlType <> xlButtonControl Then Exit Function
+
+    Select Case buttonKey
+        Case "ResetButton"
+            ShapeMatchesButtonKey = CaptionMatchesReset(GetShapeCaption(shp))
+    End Select
+End Function
+
+'------------------------------------------------------------------------------
+Private Function OleMatchesButtonKey(ByVal oleObj As OLEObject, ByVal buttonKey As String) As Boolean
+    Dim caption As String
+
+    If StrComp(oleObj.Name, buttonKey, vbTextCompare) = 0 Then
+        OleMatchesButtonKey = True
+        Exit Function
+    End If
+
+    On Error Resume Next
+    caption = CStr(oleObj.Object.Caption)
+    On Error GoTo 0
+
+    Select Case buttonKey
+        Case "ResetButton"
+            OleMatchesButtonKey = CaptionMatchesReset(caption)
+    End Select
+End Function
+
+'------------------------------------------------------------------------------
+Private Function GetShapeCaption(ByVal shp As Shape) As String
+    On Error Resume Next
+    GetShapeCaption = shp.ControlFormat.Caption
+    If Len(GetShapeCaption) = 0 Then
+        GetShapeCaption = shp.TextFrame.Characters.Text
+    End If
+    On Error GoTo 0
+    GetShapeCaption = Trim$(GetShapeCaption)
+End Function
+
+'------------------------------------------------------------------------------
+Private Function CaptionMatchesReset(ByVal caption As String) As Boolean
+    CaptionMatchesReset = (StrComp(Trim$(caption), "Reset Template", vbTextCompare) = 0) _
+        Or (InStr(1, caption, "Reset Template", vbTextCompare) > 0)
+End Function
+
+'------------------------------------------------------------------------------
+Private Sub AssignWelcomeButtonMacro(ByVal buttonKey As String, ByVal btn As Object)
+    If StrComp(buttonKey, "ResetButton", vbTextCompare) <> 0 Then Exit Sub
     On Error Resume Next
     btn.OnAction = "ResetTemplate"
     On Error GoTo 0
