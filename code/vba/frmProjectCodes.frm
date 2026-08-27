@@ -59,7 +59,12 @@ Private Sub EnsureUi()
 
     If ControlExists(CTRL_DIRECT_LIST) Then
         HookExistingControls
-        SetReorderButtonCaptions
+        On Error Resume Next
+        Me.Controls("cmdDirectUp").Caption = "^"
+        Me.Controls("cmdDirectDown").Caption = "v"
+        Me.Controls("cmdProjectUp").Caption = "^"
+        Me.Controls("cmdProjectDown").Caption = "v"
+        On Error GoTo 0
         Exit Sub
     End If
 
@@ -84,6 +89,17 @@ Private Sub EnsureUi()
     HookButton AddButton("cmdSaveProject", "Save Project", 410, 452, 120, 28), "OnSaveProject"
     HookButton AddButton("cmdDeleteProject", "Delete Project", 560, 452, 140, 28), "OnDeleteProject"
     HookButton AddButton("cmdClose", "Close", 410, 492, 290, 28), "OnCloseForm"
+    ApplyReorderButtonCaptions
+End Sub
+
+' Set ^ / v captions on reorder buttons (ASCII so VBA displays them reliably).
+Private Sub ApplyReorderButtonCaptions()
+    On Error Resume Next
+    Me.Controls("cmdDirectUp").Caption = "^"
+    Me.Controls("cmdDirectDown").Caption = "v"
+    Me.Controls("cmdProjectUp").Caption = "^"
+    Me.Controls("cmdProjectDown").Caption = "v"
+    On Error GoTo 0
 End Sub
 
 Private Sub HookExistingControls()
