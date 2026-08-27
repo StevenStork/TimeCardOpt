@@ -37,6 +37,34 @@ Public Sub ShowTimeEntryForm()
 End Sub
 
 '------------------------------------------------------------------------------
+' Clear all charge/project entries from the Time Entry grid without changing
+' date headers or the minute column.
+'------------------------------------------------------------------------------
+Public Sub ClearTimeEntryCharges()
+    Dim ws As Worksheet
+    Dim lastCol As Long
+    Dim lastMinuteRow As Long
+
+    Set ws = TimeEntrySheet()
+    lastCol = FOLLOW_ON_DATE_START_COL + DAYS_AFTER_START - 1
+    lastMinuteRow = MINUTE_START_ROW + MINUTES_PER_DAY - 1
+
+    OptimizeExcel True
+    On Error GoTo CleanFail
+
+    ws.Range(ws.Cells(MINUTE_START_ROW, FIRST_DATE_COL), _
+        ws.Cells(lastMinuteRow, lastCol)).ClearContents
+
+CleanExit:
+    OptimizeExcel False
+    Exit Sub
+
+CleanFail:
+    OptimizeExcel False
+    Err.Raise Err.Number, Err.Source, Err.Description
+End Sub
+
+'------------------------------------------------------------------------------
 ' Write entryValue (project title or charge code) into every minute cell for
 ' entryDate in [startTime, endTime).
 ' If allowOverwrite is False and cells are occupied, raises an error the form

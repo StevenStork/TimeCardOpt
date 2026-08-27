@@ -129,6 +129,37 @@ CleanFail:
 End Sub
 
 '------------------------------------------------------------------------------
+' Remove every direct charge code and project from the Project Codes sheet.
+' Keeps the column B header; clears project columns from D onward.
+'------------------------------------------------------------------------------
+Public Sub ClearAllProjectCodes()
+    Dim ws As Worksheet
+    Dim lastCol As Long
+
+    Set ws = ProjectCodesSheet()
+
+    OptimizeExcel True
+    On Error GoTo CleanFail
+
+    ws.Range(ws.Cells(DIRECT_CODE_START_ROW, DIRECT_CODE_COL), _
+        ws.Cells(ws.Rows.Count, DIRECT_CODE_COL)).ClearContents
+
+    lastCol = ws.Cells(PROJECT_TITLE_ROW, ws.Columns.Count).End(xlToLeft).Column
+    If lastCol >= PROJECT_START_COL Then
+        ws.Range(ws.Cells(1, PROJECT_START_COL), _
+            ws.Cells(ws.Rows.Count, lastCol)).ClearContents
+    End If
+
+CleanExit:
+    OptimizeExcel False
+    Exit Sub
+
+CleanFail:
+    OptimizeExcel False
+    Err.Raise Err.Number, Err.Source, Err.Description
+End Sub
+
+'------------------------------------------------------------------------------
 Public Function LoadProjectTitles() As Variant
     Dim ws As Worksheet
     Dim col As Long

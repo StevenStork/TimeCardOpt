@@ -18,7 +18,7 @@ Option Explicit
 '   4. Rebuilds the Projects table (hours to nearest hundredth)
 '   5. Rebuilds the Codes table two rows below (hours to nearest tenth)
 '   6. Writes Codes total hours to N3
-'   7. Sizes/stacks REButton, ETButton, and ECButton in column R
+'   7. Sizes/stacks REButton, ETButton, ECButton, and ResetButton in column R
 '   8. Activates the Welcome sheet
 '
 ' Projects table:
@@ -246,7 +246,8 @@ Private Function WriteCodesTable( _
 End Function
 
 '------------------------------------------------------------------------------
-' Make REButton, ETButton, and ECButton the same size and stack them in col R.
+' Make Welcome action buttons the same size and stack them in col R.
+' ResetButton should call ResetTemplate (assigned automatically when found).
 '------------------------------------------------------------------------------
 Private Sub LayoutWelcomeButtons(ByVal welcomeWs As Worksheet)
     Dim buttonNames As Variant
@@ -255,7 +256,7 @@ Private Sub LayoutWelcomeButtons(ByVal welcomeWs As Worksheet)
     Dim topPos As Double
     Dim btnTop As Double
 
-    buttonNames = Array("REButton", "ETButton", "ECButton")
+    buttonNames = Array("REButton", "ETButton", "ECButton", "ResetButton")
     leftPos = welcomeWs.Columns(BUTTON_COLUMN).Left
     topPos = welcomeWs.Rows(BUTTON_START_ROW).Top
 
@@ -290,6 +291,7 @@ Private Sub PositionWelcomeButton( _
             .Width = widthPos
             .Height = heightPos
         End With
+        AssignWelcomeButtonMacro buttonName, shp
         Exit Sub
     End If
 
@@ -316,7 +318,16 @@ Private Sub PositionWelcomeButton( _
             .Width = widthPos
             .Height = heightPos
         End With
+        AssignWelcomeButtonMacro buttonName, formBtn
     End If
+End Sub
+
+'------------------------------------------------------------------------------
+Private Sub AssignWelcomeButtonMacro(ByVal buttonName As String, ByVal btn As Object)
+    If StrComp(buttonName, "ResetButton", vbTextCompare) <> 0 Then Exit Sub
+    On Error Resume Next
+    btn.OnAction = "ResetTemplate"
+    On Error GoTo 0
 End Sub
 
 '------------------------------------------------------------------------------
