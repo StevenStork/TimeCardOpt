@@ -233,20 +233,234 @@ Public Function MinuteOfDay(ByVal timeValue As Date) As Long
 End Function
 
 '------------------------------------------------------------------------------
+' Robust time parsing for manual entry (8:30, 830, 8:30 AM, 17:30, etc.).
+'------------------------------------------------------------------------------
 Public Function ParseTimeInput(ByVal textValue As String) As Date
     Dim trimmed As String
+    Dim hourPart As Long
+    Dim minutePart As Long
+    Dim isPM As Boolean
+    Dim isAM As Boolean
+    Dim colonPos As Long
+    Dim leftPart As String
+    Dim rightPart As String
+    Dim digitsOnly As String
+    Dim i As Long
+    Dim ch As String
 
     trimmed = Trim$(textValue)
     If Len(trimmed) = 0 Then
         Err.Raise vbObjectError + 4006, "ParseTimeInput", "Enter a start and end time."
     End If
 
-    If Not IsDate(trimmed) Then
-        Err.Raise vbObjectError + 4007, "ParseTimeInput", _
-            "'" & trimmed & "' is not a valid time."
+  ' Collapse internal spaces for suffix detection.
+    Do While InStr(trimmed, "  ") > 0
+        trimmed = Replace(trimmed, "  ", " ")
+    Loop
+
+    isPM = HasTimeSuffix(trimmed, "p")
+    isAM = HasTimeSuffix(trimmed, "a")
+    If isPM And isAM Then
+        Err.Raise vbObjectError + 4011, "ParseTimeInput", _
+            "'" & textValue & "' has conflicting AM/PM markers."
     End If
 
-    ParseTimeInput = CDate(trimmed)
+    colonPos = InStr(trimmed, ":")
+    If colonPos > 0 Then
+        leftPart = Trim$(Left$(trimmed, colonPos - 1))
+        rightPart = Trim$(Mid$(trimmed, colonPos + 1))
+        hourPart = ParseHourToken(leftPart, isAM, isPM)
+        minutePart = ParseMinuteToken(rightPart, isAM, isPM)
+    Else
+        digitsOnly = ExtractTimeDigits(trimmed)
+        If Len(digitsOnly) = 0 Then
+            If IsDate(trimmed) Then
+                ParseTimeInput = CDate(trimmed)
+                Exit Function
+            End If
+            Err.Raise vbObjectError + 4007, "ParseTimeInput", _
+                "'" & textValue & "' is not a valid time."
+        End If
+
+        If Len(digitsOnly) <= 2 Then
+            hourPart = CLng(digitsOnly)
+            minutePart = 0
+        ElseIf Len(digitsOnly) = 3 Then
+            hourPart = CLng(Left$(digitsOnly, 1))
+            minutePart = CLng(Right$(digitsOnly, 2))
+        ElseIf Len(digitsOnly) = 4 Then
+            hourPart = CLng(Left$(digitsOnly, 2))
+            minutePart = CLng(Right$(digitsOnly, 2))
+        Else
+            Err.Raise vbObjectError + 4007, "ParseTimeInput", _
+                "'" & textValue & "' is not a valid time."
+        End If
+
+        hourPart = NormalizeHour(hourPart, isAM, isPM)
+    End If
+
+    If minutePart < 0 Or minutePart > 59 Then
+        Err.Raise vbObjectError + 4012, "ParseTimeInput", _
+            "Minutes must be between 0 and 59."
+    End If
+
+    If hourPart < 0 Or hourPart > 23 Then
+        Err.Raise vbObjectError + 4013, "ParseTimeInput", _
+            "Hours must be between 0 and 23."
+    End If
+
+    ParseTimeInput = TimeSerial(hourPart, minutePart, 0)
+End Function
+
+'------------------------------------------------------------------------------
+' Return the latest minute-of-day with a charge on entryDate, or -1 if none.
+'------------------------------------------------------------------------------
+Public Function FindLatestChargedMinute(ByVal entryDate As Date) As Long
+    Dim ws As Worksheet
+    Dim col As Long
+    Dim values As Variant
+    Dim rowIndex As Long
+    Dim minuteIndex As Long
+
+    Set ws = TimeEntrySheet()
+    col = FindDateColumn(ws, entryDate)
+    If col = 0 Then
+        FindLatestChargedMinute = -1
+        Exit Function
+    End If
+
+    values = ws.Range( _
+        ws.Cells(MINUTE_START_ROW, col), _
+        ws.Cells(MINUTE_START_ROW + MINUTES_PER_DAY - 1, col)).Value
+
+    For rowIndex = MINUTES_PER_DAY To 1 Step -1
+        If Len(Trim$(CStr(values(rowIndex, 1)))) > 0 Then
+            minuteIndex = rowIndex - 1
+            FindLatestChargedMinute = minuteIndex
+            Exit Function
+        End If
+    Next rowIndex
+
+    FindLatestChargedMinute = -1
+End Function
+
+'------------------------------------------------------------------------------
+Public Function DescribeLatestChargedTime(ByVal entryDate As Date) As String
+    Dim minuteIndex As Long
+
+    minuteIndex = FindLatestChargedMinute(entryDate)
+    If minuteIndex < 0 Then
+        DescribeLatestChargedTime = "None"
+    Else
+        DescribeLatestChargedTime = Format$( _
+            TimeSerial(0, 0, 0) + (minuteIndex / MINUTES_PER_DAY), "h:mm AM/PM")
+    End If
+End Function
+
+'------------------------------------------------------------------------------
+Private Function ParseHourToken(ByVal token As String, ByVal isAM As Boolean, ByVal isPM As Boolean) As Long
+    Dim hourPart As Long
+
+    If Len(token) = 0 Then
+        Err.Raise vbObjectError + 4014, "ParseHourToken", "Enter an hour value."
+    End If
+
+    If Not IsNumeric(token) Then
+        Err.Raise vbObjectError + 4015, "ParseHourToken", _
+            "'" & token & "' is not a valid hour."
+    End If
+
+    hourPart = CLng(token)
+    ParseHourToken = NormalizeHour(hourPart, isAM, isPM)
+End Function
+
+'------------------------------------------------------------------------------
+Private Function ParseMinuteToken(ByVal token As String, ByVal isAM As Boolean, ByVal isPM As Boolean) As Long
+    Dim cleaned As String
+    Dim i As Long
+    Dim ch As String
+    Dim minutePart As Long
+
+    cleaned = ""
+    For i = 1 To Len(token)
+        ch = Mid$(token, i, 1)
+        If ch >= "0" And ch <= "9" Then
+            cleaned = cleaned & ch
+        ElseIf ch = " " Then
+            ' allow trailing AM/PM after minutes
+        ElseIf ch = "a" Or ch = "A" Or ch = "p" Or ch = "P" Then
+            Exit For
+        Else
+            Err.Raise vbObjectError + 4016, "ParseMinuteToken", _
+                "'" & token & "' is not a valid minute value."
+        End If
+    Next i
+
+    If Len(cleaned) = 0 Then
+        Err.Raise vbObjectError + 4016, "ParseMinuteToken", _
+            "'" & token & "' is not a valid minute value."
+    End If
+
+    minutePart = CLng(cleaned)
+    ParseMinuteToken = minutePart
+End Function
+
+'------------------------------------------------------------------------------
+Private Function NormalizeHour(ByVal hourPart As Long, ByVal isAM As Boolean, ByVal isPM As Boolean) As Long
+    If isPM And isAM Then
+        Err.Raise vbObjectError + 4017, "NormalizeHour", "Time has conflicting AM/PM markers."
+    End If
+
+    If isAM Or isPM Then
+        If hourPart < 1 Or hourPart > 12 Then
+            Err.Raise vbObjectError + 4018, "NormalizeHour", _
+                "Hour must be between 1 and 12 when using AM or PM."
+        End If
+        If isPM And hourPart < 12 Then hourPart = hourPart + 12
+        If isAM And hourPart = 12 Then hourPart = 0
+    ElseIf hourPart > 23 Then
+        Err.Raise vbObjectError + 4019, "NormalizeHour", _
+            "Hour must be between 0 and 23."
+    End If
+
+    NormalizeHour = hourPart
+End Function
+
+'------------------------------------------------------------------------------
+Private Function HasTimeSuffix(ByVal textValue As String, ByVal suffixLetter As String) As Boolean
+    Dim lowered As String
+
+    lowered = LCase$(Trim$(textValue))
+
+    If suffixLetter = "p" Then
+        If Right$(lowered, 2) = "pm" Then
+            HasTimeSuffix = True
+        ElseIf Right$(lowered, 1) = "p" And Right$(lowered, 2) <> "am" Then
+            HasTimeSuffix = True
+        End If
+    ElseIf suffixLetter = "a" Then
+        If Right$(lowered, 2) = "am" Then
+            HasTimeSuffix = True
+        ElseIf Right$(lowered, 1) = "a" Then
+            HasTimeSuffix = True
+        End If
+    End If
+End Function
+
+'------------------------------------------------------------------------------
+Private Function ExtractTimeDigits(ByVal textValue As String) As String
+    Dim i As Long
+    Dim ch As String
+    Dim digits As String
+
+    For i = 1 To Len(textValue)
+        ch = Mid$(textValue, i, 1)
+        If ch >= "0" And ch <= "9" Then
+            digits = digits & ch
+        End If
+    Next i
+
+    ExtractTimeDigits = digits
 End Function
 
 '------------------------------------------------------------------------------

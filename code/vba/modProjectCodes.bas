@@ -414,6 +414,121 @@ Private Function NextProjectColumn(ByVal ws As Worksheet) As Long
 End Function
 
 '------------------------------------------------------------------------------
+' Move a direct charge code up or down in column B.
+'------------------------------------------------------------------------------
+Public Sub MoveDirectCode(ByVal code As String, ByVal moveUp As Boolean)
+    Dim codes As Variant
+    Dim updated() As String
+    Dim n As Long
+    Dim idx As Long
+    Dim i As Long
+
+    Dim trimmed As String
+    trimmed = Trim$(code)
+    If Len(trimmed) = 0 Then
+        Err.Raise vbObjectError + 3010, "MoveDirectCode", "Select a direct charge code to move."
+    End If
+
+    codes = LoadDirectCodes()
+    n = VariantLen(codes)
+    If n < 2 Then Exit Sub
+
+    idx = 0
+    For i = 1 To n
+        If StrComp(CStr(VariantItem(codes, i)), trimmed, vbTextCompare) = 0 Then
+            idx = i
+            Exit For
+        End If
+    Next i
+
+    If idx = 0 Then
+        Err.Raise vbObjectError + 3011, "MoveDirectCode", _
+            "Direct charge code '" & trimmed & "' was not found."
+    End If
+
+    If moveUp And idx = 1 Then Exit Sub
+    If Not moveUp And idx = n Then Exit Sub
+
+    ReDim updated(1 To n)
+    For i = 1 To n
+        updated(i) = CStr(VariantItem(codes, i))
+    Next i
+
+    If moveUp Then
+        SwapStrings updated(idx), updated(idx - 1)
+    Else
+        SwapStrings updated(idx), updated(idx + 1)
+    End If
+
+    SaveDirectCodes updated
+End Sub
+
+'------------------------------------------------------------------------------
+' Move a project column left (up) or right (down) among project columns.
+'------------------------------------------------------------------------------
+Public Sub MoveProject(ByVal projectTitle As String, ByVal moveUp As Boolean)
+    Dim ws As Worksheet
+    Dim col As Long
+    Dim lastCol As Long
+    Dim trimmed As String
+
+    trimmed = Trim$(projectTitle)
+    If Len(trimmed) = 0 Then
+        Err.Raise vbObjectError + 3012, "MoveProject", "Select a project to move."
+    End If
+
+    col = FindProjectColumn(trimmed)
+    If col = 0 Then
+        Err.Raise vbObjectError + 3013, "MoveProject", _
+            "Project '" & trimmed & "' was not found."
+    End If
+
+    Set ws = ProjectCodesSheet()
+    lastCol = ws.Cells(PROJECT_TITLE_ROW, ws.Columns.Count).End(xlToLeft).Column
+
+    If moveUp Then
+        If col <= PROJECT_START_COL Then Exit Sub
+        SwapProjectColumns ws, col, col - 1
+    Else
+        If col >= lastCol Then Exit Sub
+        SwapProjectColumns ws, col, col + 1
+    End If
+End Sub
+
+'------------------------------------------------------------------------------
+Private Sub SwapProjectColumns(ByVal ws As Worksheet, ByVal colA As Long, ByVal colB As Long)
+    Dim lastRow As Long
+    Dim valuesA As Variant
+    Dim valuesB As Variant
+
+    lastRow = ws.Rows.Count
+    valuesA = ws.Range(ws.Cells(1, colA), ws.Cells(lastRow, colA)).Value
+    valuesB = ws.Range(ws.Cells(1, colB), ws.Cells(lastRow, colB)).Value
+
+    OptimizeExcel True
+    On Error GoTo CleanFail
+
+    ws.Range(ws.Cells(1, colA), ws.Cells(lastRow, colA)).Value = valuesB
+    ws.Range(ws.Cells(1, colB), ws.Cells(lastRow, colB)).Value = valuesA
+
+CleanExit:
+    OptimizeExcel False
+    Exit Sub
+
+CleanFail:
+    OptimizeExcel False
+    Err.Raise Err.Number, Err.Source, Err.Description
+End Sub
+
+'------------------------------------------------------------------------------
+Private Sub SwapStrings(ByRef firstValue As String, ByRef secondValue As String)
+    Dim temp As String
+    temp = firstValue
+    firstValue = secondValue
+    secondValue = temp
+End Sub
+
+'------------------------------------------------------------------------------
 Private Sub RemoveDirectCodeFromAllProjects(ByVal code As String)
     Dim titles As Variant
     Dim i As Long

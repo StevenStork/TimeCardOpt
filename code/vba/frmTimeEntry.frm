@@ -1,7 +1,7 @@
 VERSION 5.00
 Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} frmTimeEntry
    Caption         =   "Enter Hours"
-   ClientHeight    =   6000
+   ClientHeight    =   6600
    ClientLeft      =   120
    ClientTop       =   465
    ClientWidth     =   7800
@@ -15,21 +15,18 @@ Attribute VB_Exposed = False
 Option Explicit
 
 '==============================================================================
-' Enter hours against a date, a project OR a direct charge code, and a
-' start/end time. Writes that project title or charge code into matching
+' Enter hours against a date, a project OR a direct charge code, and typed
+' start/end times. Writes that project title or charge code into matching
 ' Time Entry cells. If the range already has values, asks before overwriting.
 ' Also supports clearing the selected date/time block.
-'
-' Setup:
-'   Insert an empty UserForm named frmTimeEntry and paste from Option Explicit
-'   down, or import this .frm if supported. Also import modTimeEntryInput.bas.
 '==============================================================================
 
 Private Const CTRL_DATE As String = "cboDate"
 Private Const CTRL_PROJECT As String = "cboProject"
 Private Const CTRL_CHARGE As String = "cboChargeCode"
-Private Const CTRL_START As String = "cboStartTime"
-Private Const CTRL_END As String = "cboEndTime"
+Private Const CTRL_START As String = "txtStartTime"
+Private Const CTRL_END As String = "txtEndTime"
+Private Const CTRL_LATEST As String = "lblLatestTime"
 
 Private Const PROJECT_NONE As String = "(None)"
 Private Const CHARGE_NONE As String = "(None)"
@@ -52,15 +49,15 @@ End Sub
 Private Sub EnsureUi()
     Me.Caption = "Enter Hours"
     Me.Width = 420
-    Me.Height = 400
+    Me.Height = 420
 
-    If ControlExists(CTRL_DATE) Then
+    If ControlExists(CTRL_DATE) And ControlExists(CTRL_START) Then
         HookExistingControls
         Exit Sub
     End If
 
     AddLabel "lblDate", "Date", 24, 18, 360, 18
-    AddCombo CTRL_DATE, 24, 40, 360, 24
+    HookCombo AddCombo(CTRL_DATE, 24, 40, 360, 24), "OnDateChanged"
 
     AddLabel "lblProject", "Project", 24, 78, 360, 18
     HookCombo AddCombo(CTRL_PROJECT, 24, 100, 360, 24), "OnProjectChanged"
@@ -69,18 +66,21 @@ Private Sub EnsureUi()
     HookCombo AddCombo(CTRL_CHARGE, 24, 160, 360, 24), "OnChargeChanged"
 
     AddLabel "lblStart", "Start Time", 24, 198, 170, 18
-    AddCombo CTRL_START, 24, 220, 170, 24
+    AddTextBox CTRL_START, 24, 220, 170, 24
 
     AddLabel "lblEnd", "End Time", 214, 198, 170, 18
-    AddCombo CTRL_END, 214, 220, 170, 24
+    AddTextBox CTRL_END, 214, 220, 170, 24
 
-    HookButton AddButton("cmdEnter", "Enter Hours", 24, 268, 170, 32), "OnEnterHours"
-    HookButton AddButton("cmdClear", "Clear Block", 214, 268, 170, 32), "OnClearBlock"
-    HookButton AddButton("cmdClose", "Close", 24, 312, 360, 28), "OnCloseForm"
+    AddLabel CTRL_LATEST, "Latest charged time: None", 24, 252, 360, 18
+
+    HookButton AddButton("cmdEnter", "Enter Hours", 24, 288, 170, 32), "OnEnterHours"
+    HookButton AddButton("cmdClear", "Clear Block", 214, 288, 170, 32), "OnClearBlock"
+    HookButton AddButton("cmdClose", "Close", 24, 332, 360, 28), "OnCloseForm"
 End Sub
 
 Private Sub HookExistingControls()
     On Error Resume Next
+    HookCombo Me.Controls(CTRL_DATE), "OnDateChanged"
     HookCombo Me.Controls(CTRL_PROJECT), "OnProjectChanged"
     HookCombo Me.Controls(CTRL_CHARGE), "OnChargeChanged"
     HookButton Me.Controls("cmdEnter"), "OnEnterHours"
@@ -104,6 +104,18 @@ Private Sub AddLabel(ByVal name As String, ByVal caption As String, _
     Dim ctl As MSForms.Label
     Set ctl = Me.Controls.Add("Forms.Label.1", name, True)
     ctl.Caption = caption
+    ctl.Left = leftPos
+    ctl.Top = topPos
+    ctl.Width = widthPos
+    ctl.Height = heightPos
+End Sub
+
+Private Sub AddTextBox(ByVal name As String, _
+    ByVal leftPos As Single, ByVal topPos As Single, _
+    ByVal widthPos As Single, ByVal heightPos As Single)
+
+    Dim ctl As MSForms.TextBox
+    Set ctl = Me.Controls.Add("Forms.TextBox.1", name, True)
     ctl.Left = leftPos
     ctl.Top = topPos
     ctl.Width = widthPos
@@ -155,6 +167,9 @@ Private Sub HookCombo(ByVal cbo As MSForms.ComboBox, ByVal procName As String)
 End Sub
 
 ' Designer-control fallbacks
+Private Sub cboDate_Change()
+    OnDateChanged
+End Sub
 Private Sub cboProject_Change()
     OnProjectChanged
 End Sub
@@ -177,8 +192,9 @@ Private Sub LoadFormValues()
     LoadDates
     LoadProjects
     LoadChargeCodes
-    LoadTimes
+    LoadDefaultTimes
     mLoading = False
+    RefreshLatestTime
 End Sub
 
 Private Sub LoadDates()
@@ -244,26 +260,9 @@ Private Sub LoadChargeCodes()
     cbo.ListIndex = 0
 End Sub
 
-Private Sub LoadTimes()
-    Dim startCbo As MSForms.ComboBox
-    Dim endCbo As MSForms.ComboBox
-    Dim minuteValue As Long
-    Dim labelText As String
-
-    Set startCbo = Me.Controls(CTRL_START)
-    Set endCbo = Me.Controls(CTRL_END)
-    startCbo.Clear
-    endCbo.Clear
-
-    ' Offer 15-minute steps across the visible work window; typing other times is allowed.
-    For minuteValue = 330 To 1260 Step 15
-        labelText = Format$(TimeSerial(0, 0, 0) + (minuteValue / 1440#), "h:mm AM/PM")
-        startCbo.AddItem labelText
-        endCbo.AddItem labelText
-    Next minuteValue
-
-    startCbo.Value = Format$(TimeSerial(8, 0, 0), "h:mm AM/PM")
-    endCbo.Value = Format$(TimeSerial(17, 0, 0), "h:mm AM/PM")
+Private Sub LoadDefaultTimes()
+    Me.Controls(CTRL_START).Value = "8:00 AM"
+    Me.Controls(CTRL_END).Value = "5:00 PM"
 End Sub
 
 Private Function SelectedProjectTitle() As String
@@ -289,8 +288,11 @@ Private Function SelectedChargeCode() As String
 End Function
 
 '------------------------------------------------------------------------------
-' Project and charge code are mutually exclusive: picking one clears the other.
-'------------------------------------------------------------------------------
+Public Sub OnDateChanged()
+    If mLoading Then Exit Sub
+    RefreshLatestTime
+End Sub
+
 Public Sub OnProjectChanged()
     If mLoading Then Exit Sub
     If Len(SelectedProjectTitle()) = 0 Then Exit Sub
@@ -307,6 +309,20 @@ Public Sub OnChargeChanged()
     mLoading = True
     Me.Controls(CTRL_PROJECT).ListIndex = 0
     mLoading = False
+End Sub
+
+Public Sub RefreshLatestTime()
+    Dim entryDate As Date
+    Dim lbl As MSForms.Label
+
+    On Error GoTo Fail
+    Set lbl = Me.Controls(CTRL_LATEST)
+    entryDate = ParseDateInput(CStr(Me.Controls(CTRL_DATE).Value))
+    lbl.Caption = "Latest charged time: " & DescribeLatestChargedTime(entryDate)
+    Exit Sub
+
+Fail:
+    lbl.Caption = "Latest charged time: None"
 End Sub
 
 Public Sub OnEnterHours()
@@ -355,6 +371,8 @@ Public Sub OnEnterHours()
     MsgBox "Entered " & entryValue & " for " & Format$(entryDate, "mm/dd/yyyy") & _
         " (" & Format$(minutes / 60#, "0.##") & " hours).", _
         vbInformation, "Enter Hours"
+
+    RefreshLatestTime
     Exit Sub
 
 Fail:
@@ -391,6 +409,7 @@ Public Sub OnClearBlock()
 
     ClearTimeRange entryDate, startTime, endTime
     MsgBox "Cleared the selected time block.", vbInformation, "Clear Block"
+    RefreshLatestTime
     Exit Sub
 
 Fail:

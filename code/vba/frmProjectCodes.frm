@@ -66,12 +66,16 @@ Private Sub EnsureUi()
     AddTextBox CTRL_DIRECT_TEXT, 18, 42, 220, 24
     HookButton AddButton("cmdAddDirect", "Add", 248, 42, 60, 24), "OnAddDirect"
     HookButton AddButton("cmdRemoveDirect", "Remove", 316, 42, 70, 24), "OnRemoveDirect"
-    AddListBox CTRL_DIRECT_LIST, 18, 78, 370, 400, False
+    AddListBox CTRL_DIRECT_LIST, 18, 78, 320, 400, False
+    HookButton AddButton("cmdDirectUp", "▲", 348, 120, 36, 28), "OnMoveDirectUp"
+    HookButton AddButton("cmdDirectDown", "▼", 348, 156, 36, 28), "OnMoveDirectDown"
 
     AddLabel "lblProjectHeader", "Projects", 410, 16, 240, 18
     AddTextBox CTRL_PROJECT_TITLE, 410, 42, 220, 24
     HookButton AddButton("cmdAddProject", "Add", 640, 42, 60, 24), "OnAddProject"
-    HookList AddListBox(CTRL_PROJECT_LIST, 410, 78, 290, 140, False), "OnProjectSelected"
+    HookList AddListBox(CTRL_PROJECT_LIST, 410, 78, 250, 140, False), "OnProjectSelected"
+    HookButton AddButton("cmdProjectUp", "▲", 670, 100, 36, 28), "OnMoveProjectUp"
+    HookButton AddButton("cmdProjectDown", "▼", 670, 134, 36, 28), "OnMoveProjectDown"
 
     AddLabel "lblAssocHeader", "Associated Direct Codes", 410, 232, 240, 18
     AddListBox CTRL_ASSOC_LIST, 410, 258, 290, 180, True
@@ -85,7 +89,11 @@ Private Sub HookExistingControls()
     On Error Resume Next
     HookButton Me.Controls("cmdAddDirect"), "OnAddDirect"
     HookButton Me.Controls("cmdRemoveDirect"), "OnRemoveDirect"
+    HookButton Me.Controls("cmdDirectUp"), "OnMoveDirectUp"
+    HookButton Me.Controls("cmdDirectDown"), "OnMoveDirectDown"
     HookButton Me.Controls("cmdAddProject"), "OnAddProject"
+    HookButton Me.Controls("cmdProjectUp"), "OnMoveProjectUp"
+    HookButton Me.Controls("cmdProjectDown"), "OnMoveProjectDown"
     HookButton Me.Controls("cmdSaveProject"), "OnSaveProject"
     HookButton Me.Controls("cmdDeleteProject"), "OnDeleteProject"
     HookButton Me.Controls("cmdClose"), "OnCloseForm"
@@ -191,6 +199,18 @@ Private Sub txtProjectTitle_KeyDown(ByVal KeyCode As MSForms.ReturnInteger, ByVa
 End Sub
 
 ' Designer-control fallbacks (used if the form is laid out manually).
+Private Sub cmdDirectUp_Click()
+    OnMoveDirectUp
+End Sub
+Private Sub cmdDirectDown_Click()
+    OnMoveDirectDown
+End Sub
+Private Sub cmdProjectUp_Click()
+    OnMoveProjectUp
+End Sub
+Private Sub cmdProjectDown_Click()
+    OnMoveProjectDown
+End Sub
 Private Sub cmdAddDirect_Click()
     OnAddDirect
 End Sub
@@ -226,7 +246,7 @@ Private Sub RefreshAll()
     RefreshAssociationList
 End Sub
 
-Private Sub RefreshDirectList()
+Private Sub RefreshDirectList(Optional ByVal selectCode As String = "")
     Dim codes As Variant
     Dim i As Long
     Dim lst As MSForms.ListBox
@@ -237,6 +257,11 @@ Private Sub RefreshDirectList()
     codes = LoadDirectCodes()
     For i = 1 To VariantLen(codes)
         lst.AddItem CStr(VariantItem(codes, i))
+        If Len(selectCode) > 0 Then
+            If StrComp(CStr(VariantItem(codes, i)), selectCode, vbTextCompare) = 0 Then
+                lst.ListIndex = i - 1
+            End If
+        End If
     Next i
 End Sub
 
@@ -326,6 +351,82 @@ End Function
 '------------------------------------------------------------------------------
 ' Public so clsHookCommand / clsHookListBox can CallByName them.
 '------------------------------------------------------------------------------
+Public Sub OnMoveDirectUp()
+    Dim code As String
+
+    On Error GoTo Fail
+    code = SelectedDirectCode()
+    If Len(code) = 0 Then
+        MsgBox "Select a direct charge code to move.", vbInformation, "Project Codes"
+        Exit Sub
+    End If
+
+    MoveDirectCode code, True
+    RefreshDirectList code
+    RefreshAssociationList
+    Exit Sub
+
+Fail:
+    MsgBox Err.Description, vbExclamation, "Project Codes"
+End Sub
+
+Public Sub OnMoveDirectDown()
+    Dim code As String
+
+    On Error GoTo Fail
+    code = SelectedDirectCode()
+    If Len(code) = 0 Then
+        MsgBox "Select a direct charge code to move.", vbInformation, "Project Codes"
+        Exit Sub
+    End If
+
+    MoveDirectCode code, False
+    RefreshDirectList code
+    RefreshAssociationList
+    Exit Sub
+
+Fail:
+    MsgBox Err.Description, vbExclamation, "Project Codes"
+End Sub
+
+Public Sub OnMoveProjectUp()
+    Dim title As String
+
+    On Error GoTo Fail
+    title = SelectedProjectTitle()
+    If Len(title) = 0 Then
+        MsgBox "Select a project to move.", vbInformation, "Project Codes"
+        Exit Sub
+    End If
+
+    MoveProject title, True
+    RefreshProjectList title
+    RefreshAssociationList
+    Exit Sub
+
+Fail:
+    MsgBox Err.Description, vbExclamation, "Project Codes"
+End Sub
+
+Public Sub OnMoveProjectDown()
+    Dim title As String
+
+    On Error GoTo Fail
+    title = SelectedProjectTitle()
+    If Len(title) = 0 Then
+        MsgBox "Select a project to move.", vbInformation, "Project Codes"
+        Exit Sub
+    End If
+
+    MoveProject title, False
+    RefreshProjectList title
+    RefreshAssociationList
+    Exit Sub
+
+Fail:
+    MsgBox Err.Description, vbExclamation, "Project Codes"
+End Sub
+
 Public Sub OnAddDirect()
     Dim txt As MSForms.TextBox
     Dim code As String
